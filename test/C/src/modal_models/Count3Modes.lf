@@ -4,13 +4,7 @@ target C {
 }
 
 preamble {=
-  void print_logical_and_physical_time() {
-    
-    // instant_t logical = lf_time_logical();
-    // printf("Logical time is %ld.\n", logical);
-    // instant_t physical = lf_time_physical();
-    // printf("Physical time is %ld.\n", physical);
-    }
+  void print_logical_and_physical_time();
 =}
 reactor CounterCycle {
   input next: bool
@@ -125,7 +119,7 @@ reactor User {
   reaction(stepper) -> write, analyzer_clk {=
     lf_set(write, true);
     lf_set(analyzer_clk, true);
-    printf("write state: %d.\n", self->write_state)
+    printf("write state: %d.\n", self->write_state);
     // print_logical_and_physical_time();
     if (self->write_state == 3) {
       self->write_state = 1;
@@ -141,12 +135,23 @@ reactor User {
   =}
   
   reaction(read_val) {=
-    self->replica_state = read_val;
-    printf("Read Value: %d.\n", self->replica_state)
+    self->replica_state = read_val->value;
+    printf("Read Value: %d.\n", self->replica_state);
     // print_logical_and_physical_time();
   =}
 }
-federated reactor {
+main reactor {
+  preamble {=
+  void print_logical_and_physical_time() {
+    
+    interval_t t = lf_time_logical_elapsed();
+    interval_t T = lf_time_physical_elapsed();
+    printf(
+        "Elapsed logical time: %ld, physical time: %ld, lag: %ld\n",
+        t, T, T-t
+    );
+    }
+  =}
   // timer stepper(0, 250 msec)
   counter = new CounterCycle()
 
