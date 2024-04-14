@@ -1,10 +1,40 @@
 /** Modal Reactor Test. Tests cycling through modes. */
 target C {
-  fast: false,
   timeout: 2 sec
 }
 
+
 reactor CounterCycle {
+  input next: bool
+  output next_sync: bool
+  output count: int
+
+  initial mode One {
+    reaction(next) -> count, reset(Two), next_sync {=
+      lf_set(count, 1);
+      lf_set(next_sync, next);
+      lf_set_mode(Two);
+    =}
+  }
+
+  mode Two {
+    reaction(next) -> count, reset(Three), next_sync {=
+      lf_set(count, 2);
+      lf_set(next_sync, next);
+      lf_set_mode(Three);
+    =}
+  }
+
+  mode Three {
+    reaction(next) -> count, reset(One), next_sync {=
+      lf_set(count, 3);
+      lf_set(next_sync, next);
+      lf_set_mode(One);
+    =}
+  }
+}
+
+reactor CounterCycle_replica {
   input next: bool
   output count: int
 
@@ -30,25 +60,21 @@ reactor CounterCycle {
   }
 }
 
-main reactor {
-  timer stepper(0, 250 msec)
-  counter = new CounterCycle()
+reactor Analyzer {
+  input clk: bool
+  input counter_out: int
+  input replica_out: int
+  output count: int
 
   state expected_value: int = 1
+  
+  reaction(clk) counter_out, replica_out {=
+    printf("%d\n", counter_out->value);
 
-  // Trigger
-  reaction(stepper) -> counter.next {=
-    lf_set(counter.next, true);
-  =}
-
-  // Check
-  reaction(stepper) counter.count {=
-    printf("%d\n", counter.count->value);
-
-    if (!counter.count->is_present) {
+    if (!counter_out->is_present) {
       printf("ERROR: Missing mode change.\n");
       exit(1);
-    } else if (counter.count->value != self->expected_value) {
+    } else if (counter_out->value != self->expected_value) {
       printf("ERROR: Wrong mode.\n");
       exit(2);
     }
@@ -59,4 +85,39 @@ main reactor {
       self->expected_value++;
     }
   =}
+}
+
+reactor User {
+  output write: bool;
+  output read: bool;
+  output analyzer_clk: bool;
+  timer stepper(0, 250 msec)
+  reaction(stepper) -> write, analyzer_clk {=
+    lf_set(write, true);
+    lf_set(analyzer_clk, true);
+  =}
+}
+federated reactor {
+  // timer stepper(0, 250 msec)
+  counter = new CounterCycle()
+
+  replica = new CounterCycle_replica()
+  
+  analyzer = new Analyzer()
+
+  user = new User()
+
+  state expected_value: int = 1
+
+  // Trigger
+  
+
+  user.write -> counter.next;
+  counter.next_sync -> replica.next;
+
+  // Check
+  user.analyzer_clk -> analyzer.clk;
+  counter.count -> analyzer.counter_out;
+  replica.count -> analyzer.replica_out;
+  
 }
