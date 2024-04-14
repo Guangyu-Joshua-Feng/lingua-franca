@@ -3,7 +3,15 @@ target C {
   timeout: 2 sec
 }
 
-
+preamble {=
+  void print_logical_and_physical_time() {
+    
+    // instant_t logical = lf_time_logical();
+    // printf("Logical time is %ld.\n", logical);
+    // instant_t physical = lf_time_physical();
+    // printf("Physical time is %ld.\n", physical);
+    }
+=}
 reactor CounterCycle {
   input next: bool
   output next_sync: bool
@@ -38,10 +46,17 @@ reactor CounterCycle_replica {
   input next: bool
   output count: int
 
+  input read_trigger: bool
+  
+
   initial mode One {
     reaction(next) -> count, reset(Two) {=
       lf_set(count, 1);
       lf_set_mode(Two);
+    =}
+
+    reaction(read_trigger) -> count {=
+      lf_set(count, 1);
     =}
   }
 
@@ -50,12 +65,20 @@ reactor CounterCycle_replica {
       lf_set(count, 2);
       lf_set_mode(Three);
     =}
+
+    reaction(read_trigger) -> count {=
+      lf_set(count, 1);
+    =}
   }
 
   mode Three {
     reaction(next) -> count, reset(One) {=
       lf_set(count, 3);
       lf_set_mode(One);
+    =}
+
+    reaction(read_trigger) -> count {=
+      lf_set(count, 1);
     =}
   }
 }
@@ -88,13 +111,39 @@ reactor Analyzer {
 }
 
 reactor User {
+  input read_val: int;
   output write: bool;
-  output read: bool;
+  output read_trigger: bool;
   output analyzer_clk: bool;
   timer stepper(0, 250 msec)
+  timer read_timmer(0, 250 msec)
+
+  state write_state: int = 1
+  state replica_state: int;
+
+  // write the value i.e. have the state to update.
   reaction(stepper) -> write, analyzer_clk {=
     lf_set(write, true);
     lf_set(analyzer_clk, true);
+    printf("write state: %d.\n", self->write_state)
+    // print_logical_and_physical_time();
+    if (self->write_state == 3) {
+      self->write_state = 1;
+    } else {
+      self->write_state++;
+    }
+  =}
+
+  // read the value
+  reaction(read_timmer) -> read_trigger {=
+    lf_set(read_trigger, true);
+    
+  =}
+  
+  reaction(read_val) {=
+    self->replica_state = read_val;
+    printf("Read Value: %d.\n", self->replica_state)
+    // print_logical_and_physical_time();
   =}
 }
 federated reactor {
@@ -109,15 +158,19 @@ federated reactor {
 
   state expected_value: int = 1
 
-  // Trigger
+  // Write
   
 
   user.write -> counter.next;
   counter.next_sync -> replica.next;
 
   // Check
-  user.analyzer_clk -> analyzer.clk;
-  counter.count -> analyzer.counter_out;
-  replica.count -> analyzer.replica_out;
+  // user.analyzer_clk -> analyzer.clk;
+  // counter.count -> analyzer.counter_out;
+  // replica.count -> analyzer.replica_out;
+  
+  // read
+  user.read_trigger -> replica.read_trigger;
+  replica.count -> user.read_val
   
 }
