@@ -61,7 +61,7 @@ reactor CounterCycle_replica {
     =}
 
     reaction(read_trigger) -> count {=
-      lf_set(count, 1);
+      lf_set(count, 2);
     =}
   }
 
@@ -72,7 +72,7 @@ reactor CounterCycle_replica {
     =}
 
     reaction(read_trigger) -> count {=
-      lf_set(count, 1);
+      lf_set(count, 3);
     =}
   }
 }
@@ -144,12 +144,12 @@ main reactor {
   preamble {=
   void print_logical_and_physical_time() {
     
-    interval_t t = lf_time_logical_elapsed();
-    interval_t T = lf_time_physical_elapsed();
-    printf(
-        "Elapsed logical time: %ld, physical time: %ld, lag: %ld\n",
-        t, T, T-t
-    );
+    // interval_t t = lf_time_logical_elapsed();
+    // interval_t T = lf_time_physical_elapsed();
+    // printf(
+    //     "Elapsed logical time: %ld, physical time: %ld, lag: %ld\n",
+    //     t, T, T-t
+    // );
     }
   =}
   // timer stepper(0, 250 msec)
