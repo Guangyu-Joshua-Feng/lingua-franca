@@ -1,0 +1,199 @@
+/** Modal Reactor Test. Tests cycling through modes. */
+target C {
+  timeout: 2 sec,
+  coordination: centralized
+}
+
+preamble {=
+  void print_logical_and_physical_time();
+=}
+reactor CounterCycle {
+  input next: bool
+  output next_sync: bool
+  output count: int
+
+  initial mode One {
+    reaction(next) -> count, reset(Two), next_sync {=
+      lf_set(count, 1);
+      lf_set(next_sync, next);
+      lf_set_mode(Two);
+    =}
+  }
+
+  mode Two {
+    reaction(next) -> count, reset(One), next_sync {=
+      lf_set(count, 1);
+      lf_set(next_sync, next);
+      lf_set_mode(One);
+    =}
+  }
+
+  
+}
+
+reactor CounterCycle_replica {
+  input next: bool
+  output count: int
+
+  input read_trigger: bool
+  
+
+  initial mode One {
+    reaction(next) -> count, reset(Two) {=
+      printf("Update to state: %d.\n", 2);
+
+      // print time
+      interval_t t = lf_time_logical_elapsed();
+      interval_t T = lf_time_physical_elapsed();
+      printf(
+          "Elapsed logical time: %lld, physical time: %lld, lag: %lld\n",
+          t, T, T-t
+      );
+
+
+      lf_set_mode(Two);
+    =}
+
+    reaction(read_trigger) -> count {=
+      
+      lf_set(count, 1);
+    =}
+  }
+
+  mode Two {
+    reaction(next) -> count, reset(One) {=
+
+      printf("Update to state: %d.\n", 1);
+
+      // print time
+      interval_t t = lf_time_logical_elapsed();
+      interval_t T = lf_time_physical_elapsed();
+      printf(
+          "Elapsed logical time: %lld, physical time: %lld, lag: %lld\n",
+          t, T, T-t
+      );
+
+
+      lf_set_mode(One);
+    =}
+
+    reaction(read_trigger) -> count {=
+      lf_set(count, 2);
+    =}
+  }
+
+  
+  
+}
+
+
+
+reactor User {
+  input read_val: int;
+  output write: bool;
+  output read_trigger: bool;
+  output analyzer_clk: bool;
+  timer stepper(0, 250 msec)
+  timer read_timmer(0, 250 msec)
+
+  state write_state: int = 2
+  state replica_state: int;
+
+  // write the value i.e. have the state to update.
+  reaction(stepper) -> write, analyzer_clk {=
+    lf_set(write, true);
+    lf_set(analyzer_clk, true);
+    printf("write state: %d.\n", self->write_state);
+    // print_logical_and_physical_time();
+
+    // print time
+    interval_t t = lf_time_logical_elapsed();
+    interval_t T = lf_time_physical_elapsed();
+    printf(
+        "Elapsed logical time: %lld, physical time: %lld, lag: %lld\n",
+        t, T, T-t
+    );
+
+    if (self->write_state == 2) {
+      self->write_state = 1;
+    } else {
+      self->write_state++;
+    }
+  =}
+
+  // read the value
+  reaction(read_timmer) -> read_trigger {=
+    lf_set(read_trigger, true);
+    
+  =}
+  
+  reaction(read_val) {=
+    self->replica_state = read_val->value;
+    printf("Read Value: %d.\n", self->replica_state);
+    // print_logical_and_physical_time();
+    
+    // print time
+    interval_t t = lf_time_logical_elapsed();
+    interval_t T = lf_time_physical_elapsed();
+    printf(
+        "Elapsed logical time: %lld, physical time: %lld, lag: %lld\n",
+        t, T, T-t
+    );
+  =}
+}
+
+reactor delay_module(delay: int = 200) {
+  input in:bool;
+  output out: bool;
+
+  reaction(in) -> out {=
+    // lf_sleep(MSEC(self->delay));
+    lf_set(out, in);
+  =}
+
+  
+}
+federated reactor {
+  preamble {=
+  void print_logical_and_physical_time() {
+    
+    // interval_t t = lf_time_logical_elapsed();
+    // interval_t T = lf_time_physical_elapsed();
+    // printf(
+    //     "Elapsed logical time: %ld, physical time: %ld, lag: %ld\n",
+    //     t, T, T-t
+    // );
+    
+    }
+  =}
+  // timer stepper(0, 250 msec)
+  counter = new CounterCycle()
+
+  replica = new CounterCycle_replica()
+  
+  // analyzer = new Analyzer()
+
+  user = new User()
+
+  state expected_value: int = 1
+
+  // Write
+  
+  update_delay = new delay_module(delay = 0);
+  user.write -> counter.next;
+  // counter.next_sync ~> update_delay.in;
+  // update_delay.out ~> replica.next;
+  counter.next_sync -> replica.next;
+
+  // Check
+  // user.analyzer_clk -> analyzer.clk;
+  // counter.count -> analyzer.counter_out;
+  // replica.count -> analyzer.replica_out;
+  
+  // read
+  read_request_delay = new delay_module(delay = 0);
+  user.read_trigger -> read_request_delay.in;
+  read_request_delay.out -> replica.read_trigger;
+  replica.count -> user.read_val
+  
+}
