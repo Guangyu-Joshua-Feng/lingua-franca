@@ -73,7 +73,6 @@ reactor CounterCycle_replica {
           t, T, T-t
       );
 
-
       lf_set_mode(One);
     =}
 
@@ -191,7 +190,7 @@ federated reactor {
   // replica.count -> analyzer.replica_out;
   
   // read
-  read_request_delay = new delay_module(delay = 0);
+  read_request_delay = new delay_module(delay = 220);
   user.read_trigger -> read_request_delay.in;
   read_request_delay.out -> replica.read_trigger;
   replica.count -> user.read_val
